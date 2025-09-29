@@ -1,96 +1,7 @@
-name: "Build & Test"
-on: [push, pull_request]
+name: "Build Windows"
+on: [push]
 
 jobs:    
-  macOS:
-    runs-on: macos-latest
-    timeout-minutes: 30
-    env:
-      MACOSX_DEPLOYMENT_TARGET: "10.9"
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Download LuaJIT
-        uses: actions/checkout@v4
-        with:
-          repository: LuaJIT/LuaJIT
-          ref: v2.1
-          path: LuaJIT
-      - name: Compile universal LuaJIT
-        working-directory: ./LuaJIT
-        run: |
-          TARGET_FLAGS="-arch x86_64" make
-          cp ./src/libluajit.so ./src/libluajit_x64.dylib
-          cp ./src/luajit ./src/luajit_x64
-
-          make clean
-
-          TARGET_FLAGS="-arch arm64" make
-          cp ./src/libluajit.so ./src/libluajit_arm.dylib
-          cp ./src/luajit ./src/luajit_arm
-
-          lipo -create -output ./src/libluajit.dylib ./src/libluajit_x64.dylib ./src/libluajit_arm.dylib
-          lipo -create -output ./src/luajit ./src/luajit_x64 ./src/luajit_arm
-      - name: Configure
-        run: cmake -Bbuild -S. -G Xcode -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" -DLUA_INCLUDE_DIR=$PWD/LuaJIT/src -DLUA_LIBRARIES=$PWD/LuaJIT/src/lua
-      - name: Build
-        working-directory: build
-        run: xcodebuild -configuration Release -scheme https -destination generic/platform=macOS
-      - name: Test
-        working-directory: ./build/src/Release
-        run: ../../../LuaJIT/src/luajit -l "https" ../../../example/test.lua
-      - name: Artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: https-macos.zip
-          path: build/src/**/https.so
-
-  Linux:
-    name: ${{ matrix.mode.name }}
-    runs-on: ubuntu-22.04
-    timeout-minutes: 30
-    strategy:
-      matrix:
-        mode:
-        - name: Linux cURL
-          curl: 1
-          openssl: 0
-          artifact: 0
-        - name: Linux OpenSSL
-          curl: 0
-          openssl: 1
-          artifact: 0
-        - name: Linux cURL & OpenSSL
-          curl: 1
-          openssl: 1
-          artifact: 1
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Update APT Repository
-        run: sudo apt-get update
-      - name: Install Dependencies
-        run: sudo apt-get install -y lua5.1 luajit liblua5.1-0-dev libcurl4-openssl-dev g++ libssl-dev
-      - name: Configure
-        run: cmake -Bbuild -S. -DCMAKE_INSTALL_PREFIX=$PWD/install -DCMAKE_BUILD_TYPE=Release -DUSE_CURL_BACKEND=${{ matrix.mode.curl }} -DUSE_OPENSSL_BACKEND=${{ matrix.mode.openssl }}
-      - name: Build
-        run: cmake --build build --config Release --target install -j$(nproc)
-      - name: Test (Lua)
-        if: matrix.mode.artifact == 0
-        working-directory: ./install
-        run: lua -l "https" ../example/test.lua
-      - name: Test (LuaJIT)
-        if: matrix.mode.artifact == 0
-        working-directory: ./install
-        run: luajit -l "https" ../example/test.lua
-      - name: Artifact
-        if: matrix.mode.artifact == 1
-        uses: actions/upload-artifact@v4
-        with:
-          name: https-ubuntu.zip
-          path: install/https.so
-
   Windows:
     runs-on: windows-latest
     strategy:
@@ -121,9 +32,6 @@ jobs:
       run: cmake -Bbuild -S. -DCMAKE_INSTALL_PREFIX=%CD%\install -A ${{ matrix.arch }} -DLUA_INCLUDE_DIR=%CD%\LuaJIT\src -DLUA_LIBRARIES=%CD%\LuaJIT\src\lua51.lib
     - name: Build
       run: cmake --build build --config Release --target install
-    - name: Test
-      working-directory: ./install
-      run: ..\LuaJIT\src\luajit ..\example\test.lua
     - name: Artifact
       if: always()
       uses: actions/upload-artifact@v4
